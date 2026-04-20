@@ -1,80 +1,97 @@
 import streamlit as st
 import pandas as pd
 import io
+import string
 
-st.set_page_config(page_title="Công cụ So sánh Excel Tốc độ cao", layout="wide")
+# Hàm chuyển đổi số thứ tự cột thành chữ cái Excel (0 -> A, 1 -> B, ...)
+def column_index_to_letter(n):
+    result = ""
+    while n >= 0:
+        result = chr(n % 26 + 65) + result
+        n = n // 26 - 1
+    return result
 
-st.title("🚀 Công cụ So sánh Dữ liệu Excel")
-st.markdown("""
-Công cụ này giúp bạn so sánh 1 cột của file Gốc với toàn bộ dữ liệu 1 cột của file Đối chiếu. 
-Nếu giá trị tồn tại, hệ thống sẽ điền **1** vào cột kết quả. Tối ưu cho dữ liệu lớn.
-""")
+st.set_page_config(page_title="So sánh Excel chuyên nghiệp", layout="wide")
 
-# --- GIAO DIỆN UPLOAD ---
+st.title("🚀 Công cụ So sánh Excel (Tọa độ A, B, C)")
+st.markdown("So sánh một ô ở cột file Gốc với **toàn bộ cột** ở file Đối chiếu. Kết quả trả về 1 nếu tìm thấy.")
+
+# Cấu hình thanh bên để tùy chỉnh hàng bắt đầu
+with st.sidebar:
+    st.header("Cấu hình dòng")
+    skip_rows_goc = st.number_input("File Gốc: Bỏ qua bao nhiêu dòng đầu?", min_value=0, value=0)
+    skip_rows_doi_chieu = st.number_input("File Đối chiếu: Bỏ qua bao nhiêu dòng đầu?", min_value=0, value=0)
+
 col1, col2 = st.columns(2)
 
 with col1:
-    file_goc = st.file_uploader("Upload File Gốc (File cần thêm cột kết quả)", type=['xlsx', 'csv'])
+    file_goc = st.file_uploader("Upload File Gốc (File chính)", type=['xlsx', 'csv'])
 
 with col2:
-    file_doi_chieu = st.file_uploader("Upload File Đối chiếu (File chứa danh sách mẫu)", type=['xlsx', 'csv'])
+    file_doi_chieu = st.file_uploader("Upload File Đối chiếu (File danh mục)", type=['xlsx', 'csv'])
 
 if file_goc and file_doi_chieu:
-    # Đọc nhanh header để chọn cột
     try:
-        df_goc_head = pd.read_excel(file_goc, nrows=1) if file_goc.name.endswith('xlsx') else pd.read_csv(file_goc, nrows=1)
-        df_target_head = pd.read_excel(file_doi_chieu, nrows=1) if file_doi_chieu.name.endswith('xlsx') else pd.read_csv(file_doi_chieu, nrows=1)
-        
-        col_a, col_b = st.columns(2)
-        with col_a:
-            cot_goc = st.selectbox("Chọn cột ở File Gốc để kiểm tra:", df_goc_head.columns)
-        with col_b:
-            cot_doi_chieu = st.selectbox("Chọn cột ở File Đối chiếu để dò tìm:", df_target_head.columns)
+        # Đọc dữ liệu tạm để lấy số lượng cột
+        if file_goc.name.endswith('xlsx'):
+            df_goc_preview = pd.read_excel(file_goc, nrows=1, skiprows=skip_rows_goc, header=None)
+        else:
+            df_goc_preview = pd.read_csv(file_goc, nrows=1, skiprows=skip_rows_goc, header=None)
+            
+        if file_doi_chieu.name.endswith('xlsx'):
+            df_target_preview = pd.read_excel(file_doi_chieu, nrows=1, skiprows=skip_rows_doi_chieu, header=None)
+        else:
+            df_target_preview = pd.read_csv(file_doi_chieu, nrows=1, skiprows=skip_rows_doi_chieu, header=None)
 
-        ten_cot_moi = st.text_input("Tên cột kết quả mới:", value="Trung_Khop")
+        # Tạo danh sách tên cột dạng: Cột A, Cột B, Cột C...
+        cols_goc = [f"Cột {column_index_to_letter(i)}" for i in range(len(df_goc_preview.columns))]
+        cols_doi_chieu = [f"Cột {column_index_to_letter(i)}" for i in range(len(df_target_preview.columns))]
 
-        if st.button("Bắt đầu xử lý so sánh"):
-            with st.spinner("Đang xử lý dữ liệu lớn... Vui lòng đợi trong giây lát."):
-                # Đọc toàn bộ dữ liệu
+        c_a, c_b = st.columns(2)
+        with c_a:
+            chon_cot_goc = st.selectbox("Chọn cột so sánh (File Gốc):", options=range(len(cols_goc)), format_func=lambda x: cols_goc[x])
+        with c_b:
+            chon_cot_doi_chieu = st.selectbox("Chọn cột đối chiếu (File Đối chiếu):", options=range(len(cols_doi_chieu)), format_func=lambda x: cols_doi_chieu[x])
+
+        if st.button("⚡ Chạy so sánh dữ liệu"):
+            with st.spinner("Đang tải dữ liệu và so sánh..."):
+                # Đọc dữ liệu thật
                 if file_goc.name.endswith('xlsx'):
-                    df_goc = pd.read_excel(file_goc)
+                    df_goc = pd.read_excel(file_goc, skiprows=skip_rows_goc, header=None)
                 else:
-                    df_goc = pd.read_csv(file_goc)
+                    df_goc = pd.read_csv(file_goc, skiprows=skip_rows_goc, header=None)
 
                 if file_doi_chieu.name.endswith('xlsx'):
-                    df_target = pd.read_excel(file_doi_chieu, usecols=[cot_doi_chieu])
+                    df_target = pd.read_excel(file_doi_chieu, usecols=[chon_cot_doi_chieu], skiprows=skip_rows_doi_chieu, header=None)
                 else:
-                    df_target = pd.read_csv(file_doi_chieu, usecols=[cot_doi_chieu])
+                    df_target = pd.read_csv(file_doi_chieu, usecols=[chon_cot_doi_chieu], skiprows=skip_rows_doi_chieu, header=None)
 
-                # Thuật toán tối ưu: Sử dụng Set để tìm kiếm O(1)
-                # Chuyển cột đối chiếu thành set để tăng tốc độ tối đa
-                set_doi_chieu = set(df_target[cot_doi_chieu].dropna().astype(str).unique())
-
-                # So sánh và tạo cột mới
-                df_goc[ten_cot_moi] = df_goc[cot_goc].astype(str).apply(
-                    lambda x: 1 if x in set_doi_chieu else 0
+                # Chuyển cột đối chiếu thành set để tối ưu tốc độ (O(1))
+                # Lấy cột theo index (vị trí)
+                danh_sach_mau = set(df_target.iloc[:, 0].dropna().astype(str).unique())
+                
+                # So sánh: lấy giá trị tại cột đã chọn, ép kiểu string, kiểm tra trong set
+                df_goc['Ket_Qua'] = df_goc.iloc[:, chon_cot_goc].astype(str).apply(
+                    lambda x: 1 if x in danh_sach_mau else 0
                 )
 
-                st.success(f"Đã xử lý xong {len(df_goc)} dòng!")
-                
-                # Hiển thị xem trước
-                st.write("Xem trước kết quả (5 dòng đầu):")
-                st.dataframe(df_goc.head())
+                # Đổi tên các cột lại thành A, B, C cho người dùng dễ nhìn
+                df_goc.columns = [column_index_to_letter(i) if i < len(df_goc.columns)-1 else "KẾT QUẢ" for i in range(len(df_goc.columns))]
 
-                # Tạo nút tải file
+                st.success("Đã so sánh xong!")
+                st.dataframe(df_goc.head(10)) # Hiển thị 10 dòng đầu
+
+                # Xuất file
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
                     df_goc.to_excel(writer, index=False)
                 
                 st.download_button(
-                    label="📥 Tải xuống File kết quả (Excel)",
+                    label="📥 Tải file kết quả về máy",
                     data=output.getvalue(),
-                    file_name="ket_qua_so_sanh.xlsx",
+                    file_name="ket_qua_doi_soat.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
     except Exception as e:
-        st.error(f"Có lỗi xảy ra: {e}")
-
-else:
-    st.info("Vui lòng upload cả 2 file để bắt đầu.")
+        st.error(f"Lỗi: {e}. Vui lòng kiểm tra lại định dạng file.")
